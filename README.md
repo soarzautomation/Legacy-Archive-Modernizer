@@ -163,7 +163,7 @@ def transfrom_archive(source_path, target_path, transformation_rules):
 ## Technical Specifications
 
 ### Requirements
-- **Python 3.8+** with pandas, pathlib, logging libraries
+- **Python 3.8+** with standard pathlib, logging libraries
 - **Cross-platform** compatibility (Windows, Mac, Linux)
 - **Scalable** architecture supporting 100K+ files
 - **Memory efficient** processing for large archives

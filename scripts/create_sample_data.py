@@ -136,7 +136,7 @@ This sample archive demonstrates common issues in legacy file management:
 
 4. **File Relationship Issues**:
    - Related files scattered across folders
-   - No clear assembly → part → BOM → spec relationships
+   - No clear assembly -> part -> BOM -> spec relationships
 
 ## Archive Statistics:
 - **Total Projects**: 6 main projects + misc files
@@ -147,7 +147,7 @@ This sample archive demonstrates common issues in legacy file management:
 This represents a typical small engineering firm's accumulated file management debt.
 """
     
-    with open(base_path / "README_SAMPLE_DATA.md", 'w') as f:
+    with open(base_path / "README_SAMPLE_DATA.md", 'w', encoding='utf-8') as f:
         f.write(readme_content)
     
     print(f"\nSample archive created successfully!")

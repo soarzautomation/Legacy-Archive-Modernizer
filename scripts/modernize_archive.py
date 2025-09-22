@@ -53,7 +53,9 @@ class ArchiveTransformer:
                 '.xlsx': 'bom',
                 '.xls': 'bom',
                 '.doc': 'documentation',
-                '.docx': 'documentation'
+                '.docx': 'documentation',
+                '.txt': 'documentation',
+                '.md': 'documentation'
             },
             'naming_convention': '{project_id}-{type_code}-{sequence}_{description}_{revision}.{ext}'
         }
@@ -71,8 +73,8 @@ class ArchiveTransformer:
         self._create_target_structure()
         
         # Phase 3: Transform each project
-        for project in projects:
-            self._transform_project(project)
+        for project_name, project_data in projects.items():
+            self._transform_project(project_data)
         
         # Phase 4: Generate transformation report
         return self._generate_transformation_report()
@@ -210,7 +212,7 @@ class ArchiveTransformer:
             (project_base / subdir).mkdir(exist_ok=True)
         
         # Transform and organize files
-        file_counters = {'ASM': 1, 'PRT': 1, 'SPEC': 1, 'BOM': 1, 'MISC': 1}
+        file_counters = {'ASM': 1, 'PRT': 1, 'SPEC': 1, 'BOM': 1, 'DOC': 1, 'DATA': 1, 'MISC': 1}
         
         for file_info in project_data['files']:
             self._transform_file(file_info, new_project_id, project_base, file_counters)
@@ -296,7 +298,7 @@ class ArchiveTransformer:
                 return 'PRT'
         
         # Document type determination
-        elif extension == '.pdf':
+        elif extension in ['.pdf', '.doc', '.docx', '.txt', '.md']:
             if any(word in filename_lower for word in ['spec', 'requirement', 'standard']):
                 return 'SPEC'
             else:
@@ -339,14 +341,17 @@ class ArchiveTransformer:
         """
         Generate clean, descriptive name from original filename
         """
-        # Remove common prefixes and suffixes
+        # Start with the filename
         clean_name = filename
         
-        # Remove extension
-        clean_name = re.sub(r'\.[^.]*, '', clean_name)
+        # Remove file extension using string operations
+        if '.' in clean_name:
+            clean_name = clean_name.rsplit('.', 1)[0]
         
         # Remove version/revision indicators
-        clean_name = re.sub(r'[vV]?\d+|[rR]ev?\d*|final|FINAL|actualfinal', '', clean_name, flags=re.IGNORECASE)
+        clean_name = re.sub(r'[vV]?\d+', '', clean_name)
+        clean_name = re.sub(r'[rR]ev?\d*', '', clean_name) 
+        clean_name = re.sub(r'final|FINAL|actualfinal', '', clean_name, flags=re.IGNORECASE)
         
         # Remove project codes and type indicators
         clean_name = re.sub(r'^[A-Z]{2,4}[-_]', '', clean_name)
@@ -360,16 +365,20 @@ class ArchiveTransformer:
         if not clean_name or len(clean_name) < 3:
             defaults = {
                 'ASM': 'MainAssembly',
-                'PRT': 'Component',
+                'PRT': 'Component', 
                 'SPEC': 'Specification',
                 'BOM': 'BillOfMaterials',
                 'DOC': 'Document',
-                'DATA': 'DataSheet'
+                'DATA': 'DataSheet',
+                'MISC': 'File'
             }
             clean_name = defaults.get(type_code, 'File')
         
         # Capitalize properly
-        clean_name = ''.join(word.capitalize() for word in clean_name.split('_'))
+        if '_' in clean_name:
+            clean_name = ''.join(word.capitalize() for word in clean_name.split('_'))
+        else:
+            clean_name = clean_name.capitalize()
         
         return clean_name[:30]  # Limit length
     
@@ -405,12 +414,12 @@ class ArchiveTransformer:
         
         # Save report to target directory
         report_path = self.target_path / "Migration_Reports" / "transformation_report.json"
-        with open(report_path, 'w') as f:
+        with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, default=str)
         
         # Create summary report
         summary_path = self.target_path / "Migration_Reports" / "transformation_summary.txt"
-        with open(summary_path, 'w') as f:
+        with open(summary_path, 'w', encoding='utf-8') as f:
             f.write("ARCHIVE TRANSFORMATION SUMMARY\n")
             f.write("=" * 50 + "\n\n")
             f.write(f"Transformation completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")

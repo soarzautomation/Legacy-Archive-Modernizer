@@ -10,7 +10,6 @@ Author: Your Name
 import os
 import re
 import json
-import pandas as pd
 from pathlib import Path
 from collections import defaultdict, Counter
 from datetime import datetime
