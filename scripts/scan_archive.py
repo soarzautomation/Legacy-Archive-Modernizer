@@ -4,7 +4,7 @@ Legacy Archive Modernizer - Archive Analysis Engine
 Discovers patterns, relationships, and issues in legacy file archives
 
 Based on real-world enterprise migration experience.
-Author: Your Name
+Author: Ryan Hendrix
 """
 
 import os
