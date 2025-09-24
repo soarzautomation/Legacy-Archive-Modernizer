@@ -4,7 +4,7 @@ Legacy Archive Modernizer - Complete Demo Script
 Demonstrates the full transformation process with business metrics
 
 Based on real-world enterprise migration experience.
-Author: Your Name
+Author: Ryan Hendrix
 """
 
 import os
