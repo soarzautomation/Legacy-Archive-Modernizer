@@ -3,7 +3,7 @@
 Legacy Archive Modernizer - Sample Data Generator
 Creates realistic chaotic archive structure for demonstration
 
-Author: Ryan Hendrix
+Author: Ryan Hendrix - SOARZ Automation
 """
 
 import os

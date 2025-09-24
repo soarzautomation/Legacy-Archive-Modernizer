@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Legacy Archive Modernizer - Archive Analysis Engine
-Discovers patterns, relationships, and issues in legacy file archives
+Legacy Archive Modernizer - Transformation Engine
+Systematically transforms legacy archives while preserving relationships
 
 Based on real-world enterprise migration experience.
-Author: Ryan Hendrix
+Author: Ryan Hendrix - SOARZ Automation
 """
 
 import os
 import re
 import json
+import shutil
 from pathlib import Path
-from collections import defaultdict, Counter
 from datetime import datetime
 import logging
 
@@ -19,299 +19,443 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class ArchiveAnalyzer:
+class ArchiveTransformer:
     """
-    Comprehensive archive analysis engine that discovers patterns,
-    relationships, and issues in legacy file structures.
+    Comprehensive archive transformation engine that applies systematic
+    naming conventions while preserving all file relationships.
     """
     
-    def __init__(self, root_path):
-        self.root_path = Path(root_path)
-        self.files_data = []
-        self.naming_patterns = defaultdict(list)
-        self.file_relationships = defaultdict(list)
-        self.version_conflicts = []
-        self.orphaned_files = []
+    def __init__(self, source_path, target_path, transformation_rules=None):
+        self.source_path = Path(source_path)
+        self.target_path = Path(target_path)
+        self.transformation_rules = transformation_rules or self._default_rules()
+        self.transformation_log = []
+        self.project_counter = 1
+        self.project_mappings = {}
         
-    def analyze_archive(self):
+    def _default_rules(self):
         """
-        Main analysis pipeline - discovers all patterns and issues
+        Default transformation rules for engineering archives
         """
-        logger.info(f"Starting analysis of archive: {self.root_path}")
-        
-        # Phase 1: Discover all files and basic metadata
-        self._discover_files()
-        
-        # Phase 2: Identify naming conventions and patterns
-        self._identify_naming_patterns()
-        
-        # Phase 3: Map file relationships
-        self._map_file_relationships()
-        
-        # Phase 4: Detect version control issues
-        self._detect_version_conflicts()
-        
-        # Phase 5: Identify orphaned files
-        self._identify_orphaned_files()
-        
-        # Phase 6: Generate comprehensive report
-        return self._generate_analysis_report()
+        return {
+            'project_prefix': 'P',
+            'project_digits': 3,
+            'revision_format': 'R{number}',
+            'folder_structure': {
+                'drawings': 'Drawings',
+                'documentation': 'Documentation', 
+                'bom': 'BOM',
+                'standards': 'Standards'
+            },
+            'file_type_mapping': {
+                '.dwg': 'drawings',
+                '.pdf': 'documentation',
+                '.xlsx': 'bom',
+                '.xls': 'bom',
+                '.doc': 'documentation',
+                '.docx': 'documentation',
+                '.txt': 'documentation',
+                '.md': 'documentation'
+            },
+            'naming_convention': '{project_id}-{type_code}-{sequence}_{description}_{revision}.{ext}'
+        }
     
-    def _discover_files(self):
+    def transform_archive(self):
         """
-        Recursively discover all files and extract metadata
+        Main transformation pipeline
         """
-        logger.info("Discovering files and extracting metadata...")
+        logger.info(f"Starting transformation: {self.source_path} -> {self.target_path}")
         
-        for root, dirs, files in os.walk(self.root_path):
-            for file in files:
-                file_path = Path(root) / file
-                relative_path = file_path.relative_to(self.root_path)
+        # Phase 1: Analyze source structure
+        projects = self._discover_projects()
+        
+        # Phase 2: Create target structure
+        self._create_target_structure()
+        
+        # Phase 3: Transform each project
+        for project_name, project_data in projects.items():
+            self._transform_project(project_data)
+        
+        # Phase 4: Generate transformation report
+        return self._generate_transformation_report()
+    
+    def _discover_projects(self):
+        """
+        Discover and group files by project
+        """
+        logger.info("Discovering project structure...")
+        
+        projects = {}
+        
+        for root, dirs, files in os.walk(self.source_path):
+            if not files:
+                continue
                 
+            folder_path = Path(root)
+            relative_path = folder_path.relative_to(self.source_path)
+            
+            # Determine project identity from folder structure
+            project_id = self._identify_project_from_path(relative_path)
+            
+            if project_id not in projects:
+                projects[project_id] = {
+                    'original_name': project_id,
+                    'files': [],
+                    'source_folders': set(),
+                    'year': self._extract_year_from_path(relative_path)
+                }
+            
+            # Add files to project
+            for file in files:
+                file_path = folder_path / file
                 file_info = {
-                    'full_path': str(file_path),
-                    'relative_path': str(relative_path),
+                    'source_path': file_path,
                     'filename': file,
                     'extension': file_path.suffix.lower(),
-                    'size_bytes': file_path.stat().st_size,
-                    'modified_date': datetime.fromtimestamp(file_path.stat().st_mtime),
-                    'folder_depth': len(relative_path.parts) - 1,
-                    'parent_folder': relative_path.parent.name,
-                    'project_path': str(relative_path.parts[0]) if relative_path.parts else '',
+                    'size': file_path.stat().st_size,
+                    'modified': datetime.fromtimestamp(file_path.stat().st_mtime),
+                    'relative_path': relative_path
                 }
-                
-                self.files_data.append(file_info)
+                projects[project_id]['files'].append(file_info)
+                projects[project_id]['source_folders'].add(str(relative_path))
         
-        logger.info(f"Discovered {len(self.files_data)} files")
+        logger.info(f"Discovered {len(projects)} projects")
+        return projects
     
-    def _identify_naming_patterns(self):
+    def _identify_project_from_path(self, relative_path):
         """
-        Identify different naming conventions used across the archive
+        Extract project identifier from path structure
         """
-        logger.info("Identifying naming patterns...")
+        path_str = str(relative_path)
         
-        # Define regex patterns for common naming conventions
-        patterns = {
-            'descriptive_with_version': r'^[A-Za-z_]+.*[vV]?\d+.*\.(dwg|pdf|xlsx?)$',
-            'project_code_sequential': r'^[A-Z]{2,4}[-_]\d{3}[-_].*\.(dwg|pdf|xlsx?)$',
-            'structured_code': r'^[A-Z]\d{3}[-_][A-Z]{3}[-_]\d{3}.*\.(dwg|pdf|xlsx?)$',
-            'date_based': r'.*\d{6}.*\.(dwg|pdf|xlsx?)$',
-            'revision_controlled': r'.*[rR]ev?\d+.*\.(dwg|pdf|xlsx?)$',
-            'final_versions': r'.*[fF][iI][nN][aA][lL].*\.(dwg|pdf|xlsx?)$',
+        # Pattern 1: Direct project folder (ProjectAlpha, ProjectBeta, etc.)
+        if 'project' in path_str.lower():
+            match = re.search(r'project[_\s]*([a-zA-Z]+)', path_str, re.IGNORECASE)
+            if match:
+                return match.group(1).title()
+        
+        # Pattern 2: Year-based grouping
+        if re.search(r'20\d{2}', path_str):
+            year = re.search(r'(20\d{2})', path_str).group(1)
+            # Look for project name after year
+            remaining = re.sub(r'20\d{2}[_\s]*', '', path_str, flags=re.IGNORECASE)
+            if remaining:
+                project_name = re.split(r'[_\s/\\]+', remaining)[0]
+                return f"{project_name}_{year}"
+            return f"Project_{year}"
+        
+        # Pattern 3: Code-based (GAM, DEL, etc.)
+        code_match = re.search(r'([A-Z]{2,4})[-_]', path_str)
+        if code_match:
+            return code_match.group(1)
+        
+        # Pattern 4: First meaningful folder name
+        parts = [p for p in relative_path.parts if p and not p.startswith('.')]
+        if parts:
+            return parts[0].replace(' ', '_').title()
+        
+        return "Unknown_Project"
+    
+    def _extract_year_from_path(self, relative_path):
+        """
+        Extract year from path or filename for chronological organization
+        """
+        path_str = str(relative_path)
+        year_match = re.search(r'(20\d{2})', path_str)
+        if year_match:
+            return int(year_match.group(1))
+        return 2020  # Default fallback year
+    
+    def _create_target_structure(self):
+        """
+        Create standardized target directory structure
+        """
+        logger.info("Creating target directory structure...")
+        
+        self.target_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create main structure
+        (self.target_path / "Projects").mkdir(exist_ok=True)
+        (self.target_path / "Standards").mkdir(exist_ok=True)
+        (self.target_path / "Standards" / "Templates").mkdir(exist_ok=True)
+        (self.target_path / "Migration_Reports").mkdir(exist_ok=True)
+    
+    def _transform_project(self, project_data):
+        """
+        Transform a single project with all its files
+        """
+        original_name = project_data['original_name']
+        project_year = project_data['year']
+        
+        # Generate new project ID
+        new_project_id = f"{self.transformation_rules['project_prefix']}{self.project_counter:0{self.transformation_rules['project_digits']}d}"
+        
+        # Create descriptive project folder name
+        clean_name = re.sub(r'[^a-zA-Z0-9]', '', original_name)
+        project_folder_name = f"{new_project_id}_{clean_name}_{project_year}"
+        
+        # Store mapping for cross-references
+        self.project_mappings[original_name] = {
+            'new_id': new_project_id,
+            'folder_name': project_folder_name,
+            'original_name': original_name
         }
         
-        for file_info in self.files_data:
-            filename = file_info['filename']
-            for pattern_name, pattern_regex in patterns.items():
-                if re.match(pattern_regex, filename, re.IGNORECASE):
-                    self.naming_patterns[pattern_name].append(file_info)
-                    break
+        logger.info(f"Transforming project: {original_name} -> {project_folder_name}")
+        
+        # Create project directory structure
+        project_base = self.target_path / "Projects" / project_folder_name
+        project_base.mkdir(exist_ok=True)
+        
+        # Create subdirectories for different file types
+        for subdir in self.transformation_rules['folder_structure'].values():
+            (project_base / subdir).mkdir(exist_ok=True)
+        
+        # Transform and organize files
+        file_counters = {'ASM': 1, 'PRT': 1, 'SPEC': 1, 'BOM': 1, 'DOC': 1, 'DATA': 1, 'MISC': 1}
+        
+        for file_info in project_data['files']:
+            self._transform_file(file_info, new_project_id, project_base, file_counters)
+        
+        self.project_counter += 1
+    
+    def _transform_file(self, file_info, project_id, project_base, file_counters):
+        """
+        Transform a single file with new naming convention
+        """
+        source_path = file_info['source_path']
+        original_filename = file_info['filename']
+        extension = file_info['extension']
+        
+        # Determine file type and target folder
+        file_category = self.transformation_rules['file_type_mapping'].get(extension, 'misc')
+        target_folder = project_base / self.transformation_rules['folder_structure'].get(file_category, 'Misc')
+        
+        # Determine file type code
+        type_code = self._determine_type_code(original_filename, extension)
+        
+        # Extract revision information
+        revision = self._extract_revision(original_filename)
+        
+        # Generate clean description
+        description = self._generate_description(original_filename, type_code)
+        
+        # Generate new filename
+        sequence = f"{file_counters[type_code]:03d}"
+        new_filename = self.transformation_rules['naming_convention'].format(
+            project_id=project_id,
+            type_code=type_code,
+            sequence=sequence,
+            description=description,
+            revision=revision,
+            ext=extension[1:]  # Remove leading dot
+        )
+        
+        # Ensure filename is filesystem-safe
+        new_filename = re.sub(r'[<>:"/\\|?*]', '_', new_filename)
+        
+        target_path = target_folder / new_filename
+        
+        # Copy file with transformation logging
+        try:
+            shutil.copy2(source_path, target_path)
+            
+            # Log transformation
+            self.transformation_log.append({
+                'timestamp': datetime.now().isoformat(),
+                'source_path': str(source_path),
+                'target_path': str(target_path),
+                'original_filename': original_filename,
+                'new_filename': new_filename,
+                'project_id': project_id,
+                'file_size': file_info['size'],
+                'status': 'SUCCESS'
+            })
+            
+            file_counters[type_code] += 1
+            
+        except Exception as e:
+            logger.error(f"Failed to transform {original_filename}: {e}")
+            self.transformation_log.append({
+                'timestamp': datetime.now().isoformat(),
+                'source_path': str(source_path),
+                'original_filename': original_filename,
+                'error': str(e),
+                'status': 'FAILED'
+            })
+    
+    def _determine_type_code(self, filename, extension):
+        """
+        Determine standardized type code based on filename and extension
+        """
+        filename_lower = filename.lower()
+        
+        # CAD file type determination
+        if extension == '.dwg':
+            if any(word in filename_lower for word in ['assembly', 'asm', 'main']):
+                return 'ASM'
             else:
-                self.naming_patterns['unclassified'].append(file_info)
+                return 'PRT'
+        
+        # Document type determination
+        elif extension in ['.pdf', '.doc', '.docx', '.txt', '.md']:
+            if any(word in filename_lower for word in ['spec', 'requirement', 'standard']):
+                return 'SPEC'
+            else:
+                return 'DOC'
+        
+        # Spreadsheet type determination
+        elif extension in ['.xlsx', '.xls']:
+            if any(word in filename_lower for word in ['bom', 'bill', 'material']):
+                return 'BOM'
+            else:
+                return 'DATA'
+        
+        return 'MISC'
     
-    def _map_file_relationships(self):
+    def _extract_revision(self, filename):
         """
-        Identify relationships between files (assemblies, parts, BOMs, specs)
+        Extract and standardize revision information
         """
-        logger.info("Mapping file relationships...")
+        # Look for various revision patterns
+        patterns = [
+            r'[rR]ev\s*(\d+)',
+            r'[rR](\d+)',
+            r'[vV]\s*(\d+)',
+            r'Rev\s*([A-Z])',
+            r'_(\d+)(?=\.[^.]*$)'  # Number before extension
+        ]
         
-        # Group files by likely project associations
-        project_groups = defaultdict(list)
+        for pattern in patterns:
+            match = re.search(pattern, filename)
+            if match:
+                rev_value = match.group(1)
+                if rev_value.isdigit():
+                    return f"R{rev_value}"
+                else:
+                    return f"R{ord(rev_value.upper()) - ord('A') + 1}"
         
-        for file_info in self.files_data:
-            # Extract potential project identifier
-            project_id = self._extract_project_identifier(file_info['filename'])
-            if project_id:
-                project_groups[project_id].append(file_info)
+        return "R1"  # Default revision
+    
+    def _generate_description(self, filename, type_code):
+        """
+        Generate clean, descriptive name from original filename
+        """
+        # Start with the filename
+        clean_name = filename
         
-        # Within each project, identify file type relationships
-        for project_id, files in project_groups.items():
-            dwg_files = [f for f in files if f['extension'] == '.dwg']
-            pdf_files = [f for f in files if f['extension'] == '.pdf']
-            excel_files = [f for f in files if f['extension'] in ['.xlsx', '.xls']]
-            
-            self.file_relationships[project_id] = {
-                'drawings': dwg_files,
-                'specifications': pdf_files,
-                'boms': excel_files,
-                'total_files': len(files)
+        # Remove file extension using string operations
+        if '.' in clean_name:
+            clean_name = clean_name.rsplit('.', 1)[0]
+        
+        # Remove version/revision indicators
+        clean_name = re.sub(r'[vV]?\d+', '', clean_name)
+        clean_name = re.sub(r'[rR]ev?\d*', '', clean_name) 
+        clean_name = re.sub(r'final|FINAL|actualfinal', '', clean_name, flags=re.IGNORECASE)
+        
+        # Remove project codes and type indicators
+        clean_name = re.sub(r'^[A-Z]{2,4}[-_]', '', clean_name)
+        clean_name = re.sub(r'dwg|pdf|xlsx?|assembly|asm|part|prt', '', clean_name, flags=re.IGNORECASE)
+        
+        # Clean up separators and spaces
+        clean_name = re.sub(r'[-_\s]+', '_', clean_name)
+        clean_name = clean_name.strip('_')
+        
+        # If nothing meaningful left, use type-based default
+        if not clean_name or len(clean_name) < 3:
+            defaults = {
+                'ASM': 'MainAssembly',
+                'PRT': 'Component', 
+                'SPEC': 'Specification',
+                'BOM': 'BillOfMaterials',
+                'DOC': 'Document',
+                'DATA': 'DataSheet',
+                'MISC': 'File'
             }
+            clean_name = defaults.get(type_code, 'File')
+        
+        # Capitalize properly
+        if '_' in clean_name:
+            clean_name = ''.join(word.capitalize() for word in clean_name.split('_'))
+        else:
+            clean_name = clean_name.capitalize()
+        
+        return clean_name[:30]  # Limit length
     
-    def _extract_project_identifier(self, filename):
+    def _generate_transformation_report(self):
         """
-        Extract project identifier from filename using various patterns
+        Generate comprehensive transformation report
         """
-        # Pattern 1: Project name at start (Alpha, Beta, Gamma, etc.)
-        match = re.match(r'^([A-Za-z]+)', filename)
-        if match and len(match.group(1)) >= 3:
-            return match.group(1).upper()
+        logger.info("Generating transformation report...")
         
-        # Pattern 2: Project code (GAM, DEL, etc.)
-        match = re.match(r'^([A-Z]{2,4})[-_]', filename)
-        if match:
-            return match.group(1)
+        # Calculate statistics
+        total_files = len(self.transformation_log)
+        successful_files = len([log for log in self.transformation_log if log['status'] == 'SUCCESS'])
+        failed_files = total_files - successful_files
+        total_size = sum(log.get('file_size', 0) for log in self.transformation_log if log['status'] == 'SUCCESS')
         
-        # Pattern 3: Year-based grouping
-        match = re.search(r'(20\d{2})', filename)
-        if match:
-            return f"YEAR_{match.group(1)}"
-        
-        return None
-    
-    def _detect_version_conflicts(self):
-        """
-        Identify files with conflicting versions or naming
-        """
-        logger.info("Detecting version conflicts...")
-        
-        # Group similar filenames and look for version conflicts
-        base_names = defaultdict(list)
-        
-        for file_info in self.files_data:
-            # Remove common version indicators to find base name
-            base_name = re.sub(r'[vV]?\d+|[rR]ev?\d+|final|FINAL|actualfinal', '', 
-                             file_info['filename'], flags=re.IGNORECASE)
-            base_name = re.sub(r'[-_\s]+', '_', base_name).strip('_')
-            
-            base_names[base_name].append(file_info)
-        
-        # Identify groups with multiple versions
-        for base_name, files in base_names.items():
-            if len(files) > 1:
-                # Sort by modification date to identify latest
-                files_sorted = sorted(files, key=lambda x: x['modified_date'], reverse=True)
-                self.version_conflicts.append({
-                    'base_name': base_name,
-                    'files': files_sorted,
-                    'conflict_count': len(files),
-                    'latest_file': files_sorted[0]['filename'],
-                    'oldest_file': files_sorted[-1]['filename']
-                })
-    
-    def _identify_orphaned_files(self):
-        """
-        Identify files that don't appear to belong to any project
-        """
-        logger.info("Identifying orphaned files...")
-        
-        # Files in "misc", "temp", or similar folders
-        misc_keywords = ['misc', 'temp', 'old', 'backup', 'archive', 'delete']
-        
-        for file_info in self.files_data:
-            folder_path = str(file_info['relative_path']).lower()
-            
-            # Check if file is in a "misc" type folder
-            if any(keyword in folder_path for keyword in misc_keywords):
-                self.orphaned_files.append(file_info)
-                continue
-            
-            # Check if file has no clear project association
-            project_id = self._extract_project_identifier(file_info['filename'])
-            if not project_id and file_info['folder_depth'] > 0:
-                self.orphaned_files.append(file_info)
-    
-    def _generate_analysis_report(self):
-        """
-        Generate comprehensive analysis report
-        """
-        logger.info("Generating analysis report...")
-        
-        # Calculate summary statistics
-        total_files = len(self.files_data)
-        total_size_mb = sum(f['size_bytes'] for f in self.files_data) / (1024 * 1024)
-        
-        # Extension analysis
-        extensions = Counter(f['extension'] for f in self.files_data)
-        
-        # Date range analysis
-        dates = [f['modified_date'] for f in self.files_data]
-        date_range = {
-            'earliest': min(dates),
-            'latest': max(dates),
-            'span_years': (max(dates) - min(dates)).days / 365.25
-        }
-        
-        # Pattern distribution
-        pattern_distribution = {name: len(files) for name, files in self.naming_patterns.items()}
-        
+        # Create report
         report = {
-            'summary': {
-                'total_files': total_files,
-                'total_size_mb': round(total_size_mb, 2),
-                'unique_projects': len(self.file_relationships),
-                'version_conflicts': len(self.version_conflicts),
-                'orphaned_files': len(self.orphaned_files),
-                'date_range': date_range
+            'transformation_summary': {
+                'timestamp': datetime.now().isoformat(),
+                'source_path': str(self.source_path),
+                'target_path': str(self.target_path),
+                'total_projects': len(self.project_mappings),
+                'total_files_processed': total_files,
+                'successful_transformations': successful_files,
+                'failed_transformations': failed_files,
+                'success_rate': round((successful_files / total_files * 100), 2) if total_files > 0 else 0,
+                'total_size_mb': round(total_size / (1024 * 1024), 2)
             },
-            'file_types': dict(extensions.most_common()),
-            'naming_patterns': pattern_distribution,
-            'project_breakdown': {
-                pid: {
-                    'total_files': data['total_files'],
-                    'drawings': len(data['drawings']),
-                    'specifications': len(data['specifications']),
-                    'boms': len(data['boms'])
-                }
-                for pid, data in self.file_relationships.items()
-            },
-            'issues': {
-                'version_conflicts': len(self.version_conflicts),
-                'orphaned_files': len(self.orphaned_files),
-                'unclassified_files': len(self.naming_patterns.get('unclassified', []))
-            },
-            'recommendations': self._generate_recommendations()
+            'project_mappings': self.project_mappings,
+            'transformation_rules': self.transformation_rules,
+            'detailed_log': self.transformation_log
         }
         
+        # Save report to target directory
+        report_path = self.target_path / "Migration_Reports" / "transformation_report.json"
+        with open(report_path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, default=str)
+        
+        # Create summary report
+        summary_path = self.target_path / "Migration_Reports" / "transformation_summary.txt"
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            f.write("ARCHIVE TRANSFORMATION SUMMARY\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Transformation completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Source: {self.source_path}\n")
+            f.write(f"Target: {self.target_path}\n\n")
+            f.write(f"Projects processed: {len(self.project_mappings)}\n")
+            f.write(f"Files transformed: {successful_files}/{total_files}\n")
+            f.write(f"Success rate: {report['transformation_summary']['success_rate']}%\n")
+            f.write(f"Total size: {report['transformation_summary']['total_size_mb']} MB\n\n")
+            
+            f.write("PROJECT MAPPINGS:\n")
+            f.write("-" * 30 + "\n")
+            for original, mapping in self.project_mappings.items():
+                f.write(f"{original} -> {mapping['folder_name']}\n")
+            
+            if failed_files > 0:
+                f.write(f"\nFAILED TRANSFORMATIONS ({failed_files}):\n")
+                f.write("-" * 30 + "\n")
+                for log in self.transformation_log:
+                    if log['status'] == 'FAILED':
+                        f.write(f"{log['original_filename']}: {log.get('error', 'Unknown error')}\n")
+        
+        logger.info(f"Transformation complete. Success rate: {report['transformation_summary']['success_rate']}%")
         return report
-    
-    def _generate_recommendations(self):
-        """
-        Generate actionable recommendations based on analysis
-        """
-        recommendations = []
-        
-        # Version conflict recommendations
-        if self.version_conflicts:
-            recommendations.append({
-                'priority': 'HIGH',
-                'category': 'Version Control',
-                'issue': f"{len(self.version_conflicts)} sets of conflicting file versions detected",
-                'recommendation': "Implement systematic version control with clear latest-version identification",
-                'estimated_time_saved': f"{len(self.version_conflicts) * 10} minutes per search"
-            })
-        
-        # Naming convention recommendations
-        pattern_count = len([p for p in self.naming_patterns.keys() if self.naming_patterns[p]])
-        if pattern_count > 3:
-            recommendations.append({
-                'priority': 'MEDIUM',
-                'category': 'Standardization',
-                'issue': f"{pattern_count} different naming conventions in use",
-                'recommendation': "Standardize on single naming convention across all projects",
-                'estimated_time_saved': "50% reduction in file search time"
-            })
-        
-        # Orphaned files recommendations
-        if self.orphaned_files:
-            recommendations.append({
-                'priority': 'MEDIUM',
-                'category': 'Organization',
-                'issue': f"{len(self.orphaned_files)} orphaned files in misc/temp folders",
-                'recommendation': "Archive or categorize orphaned files to reduce clutter",
-                'estimated_storage_saved': f"{sum(f['size_bytes'] for f in self.orphaned_files) / (1024*1024):.1f} MB"
-            })
-        
-        return recommendations
 
 def main():
     """
-    Command-line interface for archive analysis
+    Command-line interface for archive transformation
     """
     import argparse
     
-    parser = argparse.ArgumentParser(description='Analyze legacy file archive structure')
-    parser.add_argument('archive_path', help='Path to archive directory to analyze')
-    parser.add_argument('--output', '-o', help='Output file for analysis report (JSON format)')
+    parser = argparse.ArgumentParser(description='Transform legacy file archive to modern structure')
+    parser.add_argument('source_path', help='Path to source archive directory')
+    parser.add_argument('target_path', help='Path to target directory for transformed archive')
+    parser.add_argument('--rules', '-r', help='JSON file with custom transformation rules')
+    parser.add_argument('--dry-run', action='store_true', help='Analyze only, do not copy files')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose logging')
     
     args = parser.parse_args()
@@ -319,36 +463,37 @@ def main():
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Validate input path
-    if not os.path.exists(args.archive_path):
-        logger.error(f"Archive path does not exist: {args.archive_path}")
+    # Validate paths
+    if not os.path.exists(args.source_path):
+        logger.error(f"Source path does not exist: {args.source_path}")
         return 1
     
-    # Run analysis
-    analyzer = ArchiveAnalyzer(args.archive_path)
-    report = analyzer.analyze_archive()
+    if os.path.exists(args.target_path) and os.listdir(args.target_path):
+        response = input(f"Target directory {args.target_path} is not empty. Continue? (y/n): ")
+        if response.lower() != 'y':
+            return 1
     
-    # Output results
-    if args.output:
-        with open(args.output, 'w') as f:
-            json.dump(report, f, indent=2, default=str)
-        logger.info(f"Analysis report saved to: {args.output}")
+    # Load custom rules if provided
+    transformation_rules = None
+    if args.rules:
+        with open(args.rules, 'r') as f:
+            transformation_rules = json.load(f)
+    
+    # Create transformer and run
+    transformer = ArchiveTransformer(args.source_path, args.target_path, transformation_rules)
+    
+    if args.dry_run:
+        logger.info("DRY RUN MODE - No files will be copied")
+        # In a real implementation, you'd analyze without copying
+        projects = transformer._discover_projects()
+        print(f"\nWould transform {len(projects)} projects:")
+        for project_name, project_data in projects.items():
+            print(f"  {project_name}: {len(project_data['files'])} files")
     else:
-        print("\n" + "="*50)
-        print("ARCHIVE ANALYSIS REPORT")
-        print("="*50)
-        print(f"Total Files: {report['summary']['total_files']}")
-        print(f"Total Size: {report['summary']['total_size_mb']} MB")
-        print(f"Projects Identified: {report['summary']['unique_projects']}")
-        print(f"Version Conflicts: {report['summary']['version_conflicts']}")
-        print(f"Orphaned Files: {report['summary']['orphaned_files']}")
-        print("\nFile Types:")
-        for ext, count in report['file_types'].items():
-            print(f"  {ext}: {count} files")
-        
-        print("\nRecommendations:")
-        for rec in report['recommendations']:
-            print(f"  [{rec['priority']}] {rec['category']}: {rec['recommendation']}")
+        report = transformer.transform_archive()
+        print(f"\nTransformation complete!")
+        print(f"Success rate: {report['transformation_summary']['success_rate']}%")
+        print(f"Report saved to: {args.target_path}/Migration_Reports/")
     
     return 0
 

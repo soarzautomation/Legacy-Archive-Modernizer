@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Debug script to isolate the transformation issue
+Legacy Archive Modernizer - Debug Tests
+Simple debug script to isolate transformation issues
+
+Author: Ryan Hendrix - SOARZ Automation
 """
 
 import sys
@@ -72,7 +75,7 @@ def test_single_project_transform(sample_path):
         projects = transformer._discover_projects()
         
         if not projects:
-            print(" WARNIGN: No projects found to transform")
+            print("❌ No projects found to transform")
             return False
         
         # Get first project

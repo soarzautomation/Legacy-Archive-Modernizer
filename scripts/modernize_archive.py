@@ -4,7 +4,7 @@ Legacy Archive Modernizer - Transformation Engine
 Systematically transforms legacy archives while preserving relationships
 
 Based on real-world enterprise migration experience.
-Author: Ryan Hendrix
+Author: Ryan Hendrix - SOARZ Automation
 """
 
 import os
